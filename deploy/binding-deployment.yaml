@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: servicebus-management
+  labels:
+    app: bindingconsumer
+data:
+  servicebus-management-connectionstring: "<your servicebus namespace connection string (RootManageSharedAccessKey)>"
+type: Opaque
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: message-queue
+spec:
+  type: bindings.azure.servicebusqueues
+  metadata:
+    - name: connectionString
+      secretKeyRef:
+        name: servicebus-management
+        key: servicebus-management-connectionstring
+    - name: queueName
+      value: "msgqueue"
+
+      

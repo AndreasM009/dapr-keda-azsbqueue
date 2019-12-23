@@ -1,0 +1,55 @@
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: consumer
+  labels:
+    app: consumer
+spec:
+  selector:
+    app: consumer
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 5000
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer
+  labels:
+    app: consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: consumer
+  template:
+    metadata:
+      labels:
+        app: consumer
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/id: "consumer"
+        dapr.io/port: "5000"
+    spec:
+      containers:
+      - name: consumer
+        image: m009/consumer:0.1
+        resources:
+          limits:
+            memory: 128Mi
+            cpu: 0.2
+          requests:
+            memory: 64Mi
+            cpu: 0.1
+        env:
+          - name: ASPNETCORE_ENVIRONMENT
+            value: Development
+          - name: ASPNETCORE_URLS
+            value: "http://+:5000"
+        ports:
+        - containerPort: 5000
+        imagePullPolicy: Always
+

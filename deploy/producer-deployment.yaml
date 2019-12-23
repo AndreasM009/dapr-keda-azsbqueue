@@ -1,0 +1,57 @@
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: producer
+  labels:
+    app: producer
+spec:
+  selector:
+    app: producer
+  ports:
+  - protocol: TCP
+    name: http
+    port: 80
+    targetPort: 5000
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: producer
+  labels:
+    app: producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: producer
+  template:
+    metadata:
+      labels:
+        app: producer
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/id: "producer"
+        dapr.io/port: "5000"
+        dapr.io/log-level: "debug"
+    spec:
+      containers:
+      - name: producer
+        image: m009/producer:0.1
+        resources:
+          limits:
+            memory: 128Mi
+            cpu: 0.2
+          requests:
+            memory: 64Mi
+            cpu: 0.1
+        env:
+          - name: ASPNETCORE_ENVIRONMENT
+            value: Development
+          - name: ASPNETCORE_URLS
+            value: "http://+:5000"
+        ports:
+        - containerPort: 5000
+        imagePullPolicy: Always
+
