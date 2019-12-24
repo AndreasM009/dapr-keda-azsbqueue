@@ -5,7 +5,7 @@ metadata:
   labels:
     app: bindingconsumer
 data:
-  servicebus-management-connectionstring: "<your servicebus namespace connection string (RootManageSharedAccessKey)>"
+  servicebus-management-connectionstring: "<your base64 encoded servicebus namespace connection string (RootManageSharedAccessKey)>"
 type: Opaque
 ---
 apiVersion: dapr.io/v1alpha1

@@ -5,7 +5,7 @@ metadata:
   labels:
     app: bindingconsumer
 data:
-  servicebus-msgqueue-connectionstring: "<your connection string of queue auth rule with manage rights>"
+  servicebus-msgqueue-connectionstring: "<your base64 encoded connection string of queue auth rule with manage rights>"
 type: Opaque
 ---
 apiVersion: keda.k8s.io/v1alpha1
