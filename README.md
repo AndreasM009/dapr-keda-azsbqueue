@@ -60,7 +60,7 @@ az servicebus queue authorization-rule create -g <your RG name> --namespace-name
 ``` 
 Once the auth rule is created we can list the connection string as follow:
 ```
-az servicebus queue authorization-rule keys list -g <your RG name> --namespace-name <namespace-name> --queue msgqueue 
+az servicebus queue authorization-rule keys list -g <your RG name> --namespace-name <namespace-name> --queue msgqueue --name manage
 ```
 The output looks as follow:
 ```JSON
@@ -79,6 +79,130 @@ Create a base64 representation of the connection string (either use primary or s
 echo -n '<connstr1>' | base64
 ```
 Update the Kubernetes secret in [consumer-scaling.yaml](deploy/consumer-scaling.yaml) with the base64 encoded value.
+6. Deploy the Dapr binding to your cluster:
+```Shell
+kubectl apply -f binding-deployment.yaml
+```
+7. Deploy the __Consumer__ to your cluster:
+```
+kubectl apply -f consumer-deployment.yaml
+```
+8. Check the daprd sidecar for errors:
+```Shell
+kubectl logs -l app=consumer -c daprd
+```
+You should see that the sidecar has loaded the __Component__ __message-queue__ successfully
+```Shell
+...
+time="2019-12-24T14:27:24Z" level=info msg="loaded component message-queue (bindings.azure.servicebusqueues)"
+...
+```
+9. Deploy the __Producer__ to your cluster:
+```
+kubectl apply -f producer-deployment.yaml
+```
+10. Get the public ip of the producer service:
+```
+kubectl get service
+```
+11. Now open another shell and watch the logs of the consumer:
+```
+kubectl logs -f -l app=consumer -c consumer
+```
+12. Now invoke the REST endpoint of the __Producer__ and set parameters as following:
+```JSON
+{
+  "count": 1
+  "intervalMilliseconds": 0
+}
+```
+You can either browse the Swagger UI that is published through the public endpoint or you just can use __curl__ to invoke the endpoint. With the above parameters we create just one message to test if everything is working. Watch the logs of the __Consumer__ in the other shell.
+```Shell
+curl -X POST "http://<public ip>/MessageProducer" -H "accept: */*" -H "Content-Type: application/json" -d "{\"count\":1,\"intervalMilliseconds\":0}"
+```
+You should see the following in the other shell:
+```
+Hello World -- Received at: 12/24/2019 14:42:42 -- Finished at: 12/24/2019 14:42:47
+```
+The __Consumer__ accepts the message, waits 5sec and prints out the message.
+Try playing arround the __Producer__ parameters. All messages are processed one after the other.
+
+13. Now its time to scale out the __Consumer__ depending on how many messages are in the queue. In this example we scale out the __Consumer__ in chunks of 5 messages.
+Deploy the keda ScaledObject to your cluster:
+```
+kubectl apply -f consumer-scaling.yaml
+```
+After the ScaledObject is deployed wait a few seconds and list your pods. Either you will see that the __Consumer__ pod is *Terminating* or even no pod is running.
+```Shell
+kubectl get pod
+
+NAME                                     READY   STATUS    RESTARTS   AGE
+dapr-operator-76888fdcb9-hhglf           1/1     Running   0          28h
+dapr-placement-666b996945-f8f7x          1/1     Running   0          28h
+dapr-sidecar-injector-744d97578f-6mm6l   1/1     Running   0          28h
+producer-7f988ccd4c-gcxg6                2/2     Running   0          18m
+```
+Wait a moment, why does this happen? Take a look at the *ScaledObject* in [consumer-scaling.yaml](deploy/consumer-scaling.yaml). 
+```yaml
+apiVersion: keda.k8s.io/v1alpha1
+kind: ScaledObject
+metadata:
+  name: bindingconsumer-scaler
+  labels:
+    app: bindingconsumer
+    deploymentName: consumer
+spec:
+  scaleTargetRef:
+    deploymentName: consumer
+    minReplicaCount: 0
+  maxReplicaCount: 10
+  triggers:
+  - type: azure-servicebus
+    metadata:
+      queueName: msgqueue
+      queueLength: '5'
+    authenticationRef:
+      name: trigger-auth-servicebus
+```
+
+We specified that keda can scale in the __Consumer__ to __0__ pods and scale out to max __10__ pods.
+
+14. Now post a message again and see whats happening:
+```Shell
+curl -X POST "http://<public ip>/MessageProducer" -H "accept: */*" -H "Content-Type: application/json" -d "{\"count\":1,\"intervalMilliseconds\":0}"
+```
+You see that a __Consumer__ pod is created or it is already created:
+```Shell
+consumer-fdd8b5997-whh46                 0/2     ContainerCreating   0          2s
+dapr-operator-76888fdcb9-hhglf           1/1     Running             0          28h
+dapr-placement-666b996945-f8f7x          1/1     Running             0          28h
+dapr-sidecar-injector-744d97578f-6mm6l   1/1     Running             0          28h
+producer-7f988ccd4c-gcxg6                2/2     Running             0          24m
+```
+
+15. Now let's see what happens when you send 50 messages:
+```Shell
+curl -X POST "http://<public ip>/MessageProducer" -H "accept: */*" -H "Content-Type: application/json" -d "{\"count\":50,\"intervalMilliseconds\":0}"
+
+kubectl get pod
+
+consumer-fdd8b5997-497ll                 0/2     ContainerCreating   0          5s
+consumer-fdd8b5997-g7zsc                 2/2     Running             0          5s
+consumer-fdd8b5997-vdmsx                 2/2     Running             0          5s
+consumer-fdd8b5997-whh46                 2/2     Running             0          3m28s
+dapr-operator-76888fdcb9-hhglf           1/1     Running             0          28h
+dapr-placement-666b996945-f8f7x          1/1     Running             0          28h
+dapr-sidecar-injector-744d97578f-6mm6l   1/1     Running             0          28h
+producer-7f988ccd4c-gcxg6                2/2     Running             0          27m
+```
+You can see that keda scales out the consumer pods!!
+Now let us see how the __Horizontal Pod Autoscaler__ is configured.
+
+```Shell
+kubectl get hpa
+NAME                REFERENCE             TARGETS     MINPODS   MAXPODS   REPLICAS   AGE
+keda-hpa-consumer   Deployment/consumer   0/5 (avg)   1         10        10         11m
+```
 
 ## How it works
 
