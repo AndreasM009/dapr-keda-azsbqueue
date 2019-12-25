@@ -2,7 +2,7 @@
 
 I think every architect or developer knows about the producer consumer pattern. In this repository I want to show how [dapr bindings](http://github.com/dapr) can be used to implement this pattern and how the consumer can be scaled out with [keda](https://github.com/kedacore/keda).
 
-// Todo: create a architecture diagram
+![alt text](img/architecture.png "Architecture")
 
 In dapr you can use output and input bindings to send message to and receive messages from a queue. 
 When you decide on a queue technique like Redis, RabbitMQ or Azure ServiceBus Queues, you usually have to use integration libraries for binding in your code.
@@ -22,187 +22,196 @@ The __Producer__ and __Consumer__ are implemented already in Asp.NET Core 3.1. T
 
 ### Setting up Azure ServiceBus Queue
 1. Create a new or use an existing Azure ResourceGroup
-```Shell
-az group create -n <your RG name> -l <location>
-```
+   ```Shell
+   az group create -n <your RG name> -l <location>
+   ```
 2. Create a new ServiceBus Namespace
-```
-az servicebus namespace create -n <namespace name> -g <your RG name> -l <location> --sku Basic
-```
+   ```
+   az servicebus namespace create -n <namespace name> -g <your RG name> -l <location> --sku Basic
+   ```
 3. We need to be able to manage the namespace, therefore we need to list the __RootManageSharedAccessKey__ connection string
-```Shell
-az servicebus namespace authorization-rule keys list -g <your RG name> --namespace-name <namespace name> --name RootManageSharedAccessKey
-```
-The output looks as follow:
-```JSON
-{
-  "aliasPrimaryConnectionString": null,
-  "aliasSecondaryConnectionString": null,
-  "keyName": "RootManageSharedAccessKey",
-  "primaryConnectionString": "<connstr1>",
-  "primaryKey": "<redacted>",
-  "secondaryConnectionString": "<connstr2>",
-  "secondaryKey": "<redacted>"
-}
-```
-Create a base64 representation of the connection string (either use primary or secondary)
-```Shell
-echo -n '<connstr1>' | base64
-```
-Update the Kubernetes secret in [binding-deployment.yaml](deploy/binding-deployment.yaml) with the base64 encoded value.
+   ```Shell
+   az servicebus namespace authorization-rule keys list -g <your RG name> --namespace-name <namespace name> --name RootManageSharedAccessKey
+   ```
+   The output looks as follow:
+   ```JSON
+   {
+     "aliasPrimaryConnectionString": null,
+     "aliasSecondaryConnectionString": null,
+     "keyName": "RootManageSharedAccessKey",
+     "primaryConnectionString": "<connstr1>",
+     "primaryKey": "<redacted>",
+     "secondaryConnectionString": "<connstr2>",
+     "secondaryKey": "<redacted>"
+   }
+   ```
+   Create a base64 representation of the connection string (either use primary or secondary)
+   ```Shell
+   echo -n '<connstr1>' | base64
+   ```
+   Update the Kubernetes secret in [binding-deployment.yaml](deploy/binding-deployment.yaml) with the base64 encoded value.
+
 4. Create a ServiceBus Queue
-```
-az servicebus queue create -n msgqueue -g <your RG name> --namespace-name <namespace name>
-```
+   ```
+   az servicebus queue create -n msgqueue -g <your RG name> --namespace-name <namespace name>
+   ```
+
 5. We need to be able to connect to the queue, therefore we need to create an auth rule with __Manage__ permission
-```Shell
-az servicebus queue authorization-rule create -g <your RG name> --namespace-name <namespace name> --queue-name msgqueue --name manage --rights Manage
-``` 
-Once the auth rule is created we can list the connection string as follow:
-```
-az servicebus queue authorization-rule keys list -g <your RG name> --namespace-name <namespace-name> --queue msgqueue --name manage
-```
-The output looks as follow:
-```JSON
-{
-  "aliasPrimaryConnectionString": null,
-  "aliasSecondaryConnectionString": null,
-  "keyName": "order-consumer",
-  "primaryConnectionString": "<connstr1>",
-  "primaryKey": "<redacted>",
-  "secondaryConnectionString": "<connstr2>",
-  "secondaryKey": "<redacted>"
-}
-```
-Create a base64 representation of the connection string (either use primary or secondary)
-```Shell
-echo -n '<connstr1>' | base64
-```
-Update the Kubernetes secret in [consumer-scaling.yaml](deploy/consumer-scaling.yaml) with the base64 encoded value.
-6. Deploy the Dapr binding to your cluster:
-```Shell
-kubectl apply -f binding-deployment.yaml
-```
-7. Deploy the __Consumer__ to your cluster:
-```
-kubectl apply -f consumer-deployment.yaml
-```
-8. Check the daprd sidecar for errors:
-```Shell
-kubectl logs -l app=consumer -c daprd
-```
-You should see that the sidecar has loaded the __Component__ __message-queue__ successfully
-```Shell
-...
-time="2019-12-24T14:27:24Z" level=info msg="loaded component message-queue (bindings.azure.servicebusqueues)"
-...
-```
-9. Deploy the __Producer__ to your cluster:
-```
-kubectl apply -f producer-deployment.yaml
-```
-10. Get the public ip of the producer service:
-```
-kubectl get service
-```
-11. Now open another shell and watch the logs of the consumer:
-```
-kubectl logs -f -l app=consumer -c consumer
-```
-12. Now invoke the REST endpoint of the __Producer__ and set parameters as following:
-```JSON
-{
-  "count": 1
-  "intervalMilliseconds": 0
-}
-```
-You can either browse the Swagger UI that is published through the public endpoint or you just can use __curl__ to invoke the endpoint. With the above parameters we create just one message to test if everything is working. Watch the logs of the __Consumer__ in the other shell.
-```Shell
-curl -X POST "http://<public ip>/MessageProducer" -H "accept: */*" -H "Content-Type: application/json" -d "{\"count\":1,\"intervalMilliseconds\":0}"
-```
-You should see the following in the other shell:
-```
-Hello World -- Received at: 12/24/2019 14:42:42 -- Finished at: 12/24/2019 14:42:47
-```
-The __Consumer__ accepts the message, waits 5sec and prints out the message.
-Try playing arround the __Producer__ parameters. All messages are processed one after the other.
+   ```Shell
+   az servicebus queue authorization-rule create -g <your RG name> --namespace-name <namespace name> --queue-name msgqueue --name manage --rights Manage
+   ``` 
+   Once the auth rule is created we can list the connection string as follow:
+   ```
+   az servicebus queue authorization-rule keys list -g <your RG name> --namespace-name <namespace-name> --queue msgqueue --name manage
+   ```
+   The output looks as follow:
+   ```JSON
+   {
+     "aliasPrimaryConnectionString": null,
+     "aliasSecondaryConnectionString": null,
+     "keyName": "order-consumer",
+     "primaryConnectionString": "<connstr1>",
+     "primaryKey": "<redacted>",
+     "secondaryConnectionString": "<connstr2>",
+     "secondaryKey": "<redacted>"
+   }
+   ```
+   Create a base64 representation of the connection string (either use primary or secondary)
+   ```Shell
+   echo -n '<connstr1>' | base64
+   ```
+   Update the Kubernetes secret in [consumer-scaling.yaml](deploy/consumer-scaling.yaml) with the base64 encoded value.
 
-13. Now its time to scale out the __Consumer__ depending on how many messages are in the queue. In this example we scale out the __Consumer__ in chunks of 5 messages.
-Deploy the keda ScaledObject to your cluster:
-```
-kubectl apply -f consumer-scaling.yaml
-```
-After the ScaledObject is deployed wait a few seconds and list your pods. Either you will see that the __Consumer__ pod is *Terminating* or even no pod is running.
-```Shell
-kubectl get pod
+### Kubernetes deployment
 
-NAME                                     READY   STATUS    RESTARTS   AGE
-dapr-operator-76888fdcb9-hhglf           1/1     Running   0          28h
-dapr-placement-666b996945-f8f7x          1/1     Running   0          28h
-dapr-sidecar-injector-744d97578f-6mm6l   1/1     Running   0          28h
-producer-7f988ccd4c-gcxg6                2/2     Running   0          18m
-```
-Wait a moment, why does this happen? Take a look at the *ScaledObject* in [consumer-scaling.yaml](deploy/consumer-scaling.yaml). 
-```yaml
-apiVersion: keda.k8s.io/v1alpha1
-kind: ScaledObject
-metadata:
-  name: bindingconsumer-scaler
-  labels:
-    app: bindingconsumer
-    deploymentName: consumer
-spec:
-  scaleTargetRef:
-    deploymentName: consumer
-    minReplicaCount: 0
-  maxReplicaCount: 10
-  triggers:
-  - type: azure-servicebus
-    metadata:
-      queueName: msgqueue
-      queueLength: '5'
-    authenticationRef:
-      name: trigger-auth-servicebus
-```
+1. Deploy the Dapr binding to your cluster:
+   ```Shell
+   kubectl apply -f binding-deployment.yaml
+   ```
+2. Deploy the __Consumer__ to your cluster:
+   ```
+   kubectl apply -f consumer-deployment.yaml
+   ```
+3. Check the daprd sidecar for errors:
+   ```Shell
+   kubectl logs -l app=consumer -c daprd
+   ```
+   You should see that the sidecar has loaded the __Component__ __message-queue__ successfully
+   ```Shell
+   ...
+   time="2019-12-24T14:27:24Z" level=info msg="loaded component message-queue (bindings.azure.servicebusqueues)"
+   ...
+   ```
+4. Deploy the __Producer__ to your cluster:
+   ```
+   kubectl apply -f producer-deployment.yaml
+   ```
 
-We specified that keda can scale in the __Consumer__ to __0__ pods and scale out to max __10__ pods.
+### See it in action
 
-14. Now post a message again and see whats happening:
-```Shell
-curl -X POST "http://<public ip>/MessageProducer" -H "accept: */*" -H "Content-Type: application/json" -d "{\"count\":1,\"intervalMilliseconds\":0}"
-```
-You see that a __Consumer__ pod is created or it is already created:
-```Shell
-consumer-fdd8b5997-whh46                 0/2     ContainerCreating   0          2s
-dapr-operator-76888fdcb9-hhglf           1/1     Running             0          28h
-dapr-placement-666b996945-f8f7x          1/1     Running             0          28h
-dapr-sidecar-injector-744d97578f-6mm6l   1/1     Running             0          28h
-producer-7f988ccd4c-gcxg6                2/2     Running             0          24m
-```
+1. Get the public ip of the producer service:
+   ```
+   kubectl get service
+   ```
+2. Open another shell and watch the logs of the consumer:
+   ```
+   kubectl logs -f -l app=consumer -c consumer
+   ```
+3. Now invoke the REST endpoint of the __Producer__ and set parameters as following:
+   ```JSON
+   {
+     "count": 1
+     "intervalMilliseconds": 0
+   }
+   ```
+   You can either browse the Swagger UI that is published through the public endpoint or you just can use __curl__ to invoke the endpoint. With the above parameters we create just one message to test if everything is working. Watch the logs of the __Consumer__ in the other shell.
+   ```Shell
+   curl -X POST "http://<public ip>/MessageProducer" -H "accept: */*" -H "Content-Type: application/json" -d "{\"count\":1,\"intervalMilliseconds\":0}"
+   ```
+   You should see the following in the other shell:
+   ```
+   Hello World -- Received at: 12/24/2019 14:42:42 -- Finished at: 12/24/2019 14:42:47
+   ```
+   The __Consumer__ accepts the message, waits 5sec and prints out the message.
+   Try playing arround the __Producer__ parameters. All messages are processed one after the other.
 
-15. Now let's see what happens when you send 50 messages:
-```Shell
-curl -X POST "http://<public ip>/MessageProducer" -H "accept: */*" -H "Content-Type: application/json" -d "{\"count\":50,\"intervalMilliseconds\":0}"
+4. Now its time to scale out the __Consumer__ depending on how many messages are in the queue. 
+   In this example we scale out the __Consumer__ in chunks of 5 messages.
+   Deploy the keda ScaledObject to your cluster:
+   ```
+   kubectl apply -f consumer-scaling.yaml
+   ```
+   After the ScaledObject is deployed wait a few seconds and list your pods. Either you will see that the __Consumer__ pod is *Terminating* or even no pod is running.
+   ```Shell
+   kubectl get pod
+   
+   NAME                                     READY   STATUS    RESTARTS   AGE
+   dapr-operator-76888fdcb9-hhglf           1/1     Running   0          28h
+   dapr-placement-666b996945-f8f7x          1/1     Running   0          28h
+   dapr-sidecar-injector-744d97578f-6mm6l   1/1     Running   0          28h
+   producer-7f988ccd4c-gcxg6                2/2     Running   0          18m
+   ```
+   Wait a moment, why does this happen? Take a look at the *ScaledObject* in [consumer-scaling.yaml](deploy/consumer-scaling.yaml). 
+   ```yaml
+   apiVersion: keda.k8s.io/v1alpha1
+   kind: ScaledObject
+   metadata:
+     name: bindingconsumer-scaler
+     labels:
+       app: bindingconsumer
+       deploymentName: consumer
+   spec:
+     scaleTargetRef:
+       deploymentName: consumer
+       minReplicaCount: 0
+       maxReplicaCount: 10
+     triggers:
+     - type: azure-servicebus
+       metadata:
+         queueName: msgqueue
+         queueLength: '5'
+       authenticationRef:
+         name: trigger-auth-servicebus
+   ```
 
-kubectl get pod
+   We specified that keda can scale in the __Consumer__ to __0__ pods and scale out to max __10__ pods.
 
-consumer-fdd8b5997-497ll                 0/2     ContainerCreating   0          5s
-consumer-fdd8b5997-g7zsc                 2/2     Running             0          5s
-consumer-fdd8b5997-vdmsx                 2/2     Running             0          5s
-consumer-fdd8b5997-whh46                 2/2     Running             0          3m28s
-dapr-operator-76888fdcb9-hhglf           1/1     Running             0          28h
-dapr-placement-666b996945-f8f7x          1/1     Running             0          28h
-dapr-sidecar-injector-744d97578f-6mm6l   1/1     Running             0          28h
-producer-7f988ccd4c-gcxg6                2/2     Running             0          27m
-```
-You can see that keda scales out the consumer pods!!
-Now let us see how the __Horizontal Pod Autoscaler__ is configured.
+5. Now post a message again and see whats happening:
+   ```Shell
+   curl -X POST "http://<public ip>/MessageProducer" -H "accept: */*" -H "Content-Type: application/json" -d "{\"count\":1,\"intervalMilliseconds\":0}"
+   ```
+   You see that a __Consumer__ pod is created or it is already created:
+   ```Shell
+   consumer-fdd8b5997-whh46                 0/2     ContainerCreating   0          2s
+   dapr-operator-76888fdcb9-hhglf           1/1     Running             0          28h
+   dapr-placement-666b996945-f8f7x          1/1     Running             0          28h
+   dapr-sidecar-injector-744d97578f-6mm6l   1/1     Running             0          28h
+   producer-7f988ccd4c-gcxg6                2/2     Running             0          24m
+   ```
 
-```Shell
-kubectl get hpa
-NAME                REFERENCE             TARGETS     MINPODS   MAXPODS   REPLICAS   AGE
-keda-hpa-consumer   Deployment/consumer   0/5 (avg)   1         10        10         11m
-```
+6. Now let's see what happens when you send 50 messages:
+   ```Shell
+   curl -X POST "http://<public ip>/MessageProducer" -H "accept: */*" -H "Content-Type: application/json" -d "{\"count\":50,\"intervalMilliseconds\":0}"
+
+   kubectl get pod
+
+   consumer-fdd8b5997-497ll                 0/2     ContainerCreating   0          5s
+   consumer-fdd8b5997-g7zsc                 2/2     Running             0          5s
+   consumer-fdd8b5997-vdmsx                 2/2     Running             0          5s
+   consumer-fdd8b5997-whh46                 2/2     Running             0          3m28s
+   dapr-operator-76888fdcb9-hhglf           1/1     Running             0          28h
+   dapr-placement-666b996945-f8f7x          1/1     Running             0          28h
+   dapr-sidecar-injector-744d97578f-6mm6l   1/1     Running             0          28h
+   producer-7f988ccd4c-gcxg6                2/2     Running             0          27m
+   ```
+   You can see that keda scales out the consumer pods!!
+   Now let us see how the __Horizontal Pod Autoscaler__ is configured.
+
+   ```Shell
+   kubectl get hpa
+   NAME                REFERENCE             TARGETS     MINPODS   MAXPODS   REPLICAS   AGE
+   keda-hpa-consumer   Deployment/consumer   0/5 (avg)   1         10        10         11m
+   ```
 
 ## How it works
 
