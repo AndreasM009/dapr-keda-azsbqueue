@@ -28,11 +28,7 @@ namespace producer.Controllers
 
                 var payload = new
                 {
-                    data = msg,
-                    metadata = new Dictionary<string, string>
-                    {
-                        {"label", "producer dapr"}
-                    }
+                    data = msg
                 };
 
                 var client = new HttpClient();

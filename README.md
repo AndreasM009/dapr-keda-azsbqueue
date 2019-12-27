@@ -234,7 +234,8 @@ spec:
 ```  
 
 In the __spec__ section we specify the type of the binding __bindings.azure.servicebusqueue__.
-In addition, the connection string (Manage namespace) of the Azure ServiceBus instance and the name of the Queue must be specified.
+In addition, the connection string of the Azure ServiceBus instance and the name of the Queue must be specified.
+The name of the binding is set in __metadata.name__. This is the name that we use in our code to communicate with the dapr system. 
 
 The following secret is used to store the connection string.
 ```yaml
@@ -249,4 +250,62 @@ data:
 type: Opaque
 ```
 
-// Todo
+### Producer code.
+
+When the __Producer__ creates a message it just calls the http endpoint of the __daprd__ injected sidecar and uses the name of the binding in the request url path. Look at the code of the [MessageProducerController](producer/Controllers/MessageProducerController.cs).
+
+``` C#
+var daprport = "3500";
+var daprUrl = $"http://localhost:{daprport}/v1.0/bindings/message-queue";
+
+for (var i = 0; i < produce.Count; i++)
+{
+    var msg = new Message
+    {
+        Text = "Hello World"
+    };
+
+    var payload = new
+    {
+        data = msg
+    };
+
+    var client = new HttpClient();
+    var data = JsonConvert.SerializeObject(payload, new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
+    var result = await client.PostAsync(daprUrl, new StringContent(data, Encoding.UTF8, "application/json"));
+
+    result.EnsureSuccessStatusCode();
+
+    await Task.Delay(produce.IntervalMilliseconds);
+}
+
+return Ok();
+```
+
+That's it! A POST request to http://localhost:3500/v1.0/bindings/message-queue is enough to put a message on the Azure Service Bus Queue. The body of the request looks as follow:
+```JSON
+{
+  "data": "<your data>"
+}
+```
+
+### Consumer code
+
+In the __Consumer__ code a endpoint that accepts a request URL path with the name of the binding must be exposed and must accept a POST request.
+
+```C#
+[ApiController]
+[Route("message-queue")]
+public class MessageQueueController : ControllerBase
+{
+    [HttpPost]
+    public async Task<IActionResult> Process([FromBody]Message message)
+    {
+        var start = DateTime.Now;
+        await Task.Delay(5 * 1000);
+        var end = DateTime.Now;
+        Console.WriteLine($"{message.Text} -- Received at: {start.ToString()} -- Finished at: {end.ToString()}");
+        return Ok();
+    }
+}
+```
